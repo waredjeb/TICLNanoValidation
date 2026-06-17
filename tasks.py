@@ -215,6 +215,8 @@ if HTCONDOR_AVAILABLE:
             This method is called for each job and should configure what
             command to run and how to run it.
             """
+            print(f"DEBUG: htcondor_job_config called for job {job_num}, branches {branches}")
+
             # The command that will be executed on the worker node
             # LAW will handle calling the right branch task
             config.executable = "bash"
@@ -236,6 +238,7 @@ if HTCONDOR_AVAILABLE:
             config.custom_content.append(("getenv", "True"))
             config.custom_content.append(("universe", "vanilla"))
 
+            print(f"DEBUG: job config created successfully")
             return config
 
         def htcondor_create_job_file_factory(self):
