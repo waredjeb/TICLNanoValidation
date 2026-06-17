@@ -208,6 +208,36 @@ if HTCONDOR_AVAILABLE:
                 os.path.join(self.output_dir, "htcondor_jobs")
             )
 
+        def htcondor_job_config(self, config, job_num, branches):
+            """
+            Configure the HTCondor job.
+
+            This method is called for each job and should configure what
+            command to run and how to run it.
+            """
+            # The command that will be executed on the worker node
+            # LAW will handle calling the right branch task
+            config.executable = "bash"
+            config.arguments = []
+
+            # Input/output files
+            config.input_files = {}
+            config.output_files = {}
+
+            # Render variables for the job
+            config.render_variables = {}
+
+            # Custom HTCondor directives
+            config.custom_content = []
+            config.custom_content.append(("RequestCpus", str(self.htcondor_cpus)))
+            config.custom_content.append(("RequestMemory", self.htcondor_memory))
+            config.custom_content.append(("RequestDisk", self.htcondor_disk))
+            config.custom_content.append(("+MaxRuntime", str(self.max_runtime)))
+            config.custom_content.append(("getenv", "True"))
+            config.custom_content.append(("universe", "vanilla"))
+
+            return config
+
         def htcondor_create_job_file_factory(self):
             """Create HTCondor job file factory."""
             factory = super().htcondor_create_job_file_factory()
