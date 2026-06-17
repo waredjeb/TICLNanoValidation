@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# LAW
+.law/
+*.law
+# Cloned LAW source kept locally for reference only (has its own .git)
+law/
+
+# Luigi
+luigi-state.pickle
+
+# Validation outputs
+validation_output/
+*_output/
+*_results/
+results/
+*.root
+*.png
+*.pdf
+summary.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,28 @@
+# Collection schema for offline NanoAOD (e.g. step4_inNANOAODSIM.root).
+# Only branch *names* live here; analysis code references logical keys.
+#
+# Note: offline files contain only sim2reco associations (no Reco*2Sim*), so the
+# efficiency module computes efficiency but skips fake rate automatically.
+
+schema:
+  name: offline
+
+  fields:
+    eta:    "{coll}_barycenter_eta"
+    phi:    "{coll}_barycenter_phi"
+    energy: "{coll}_raw_energy"
+    pt:     "{coll}_raw_pt"
+
+  associations:
+    sim2reco: "{sim}2{reco}ByHits"
+    reco2sim: "Reco{reco}2{sim}ByHits"
+
+  reco:
+    clue3d:          ticlTrackstersCLUE3DHigh
+    links:           ticlTracksterLinks
+    superclustering: ticlTracksterLinksSuperclusteringDNN
+    candidate:       ticlCandidate
+
+  sim:
+    cp: { token: SimCP, tracksters: ticlSimTrackstersfromCPs }
+    sc: { token: SimSC, tracksters: ticlSimTracksters }
