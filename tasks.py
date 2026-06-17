@@ -213,6 +213,11 @@ if HTCONDOR_AVAILABLE:
                 os.path.join(self.output_dir, "htcondor_jobs")
             )
 
+        def htcondor_bootstrap_file(self):
+            """Bootstrap file to set up environment on worker nodes."""
+            bootstrap_file = law.util.rel_path(__file__, "bootstrap.sh")
+            return law.JobInputFile(bootstrap_file, share=True, render_job=True)
+
         def htcondor_job_config(self, config, job_num, branches):
             """
             Configure the HTCondor job.
@@ -222,26 +227,16 @@ if HTCONDOR_AVAILABLE:
             """
             print(f"DEBUG: htcondor_job_config called for job {job_num}, branches {branches}")
 
-            # The command that will be executed on the worker node
-            # LAW will handle calling the right branch task
-            config.executable = "bash"
-            config.arguments = []
+            # Render variables - available in bootstrap.sh
+            config.render_variables["validation_path"] = str(self.base_dir)
 
-            # Input/output files
-            config.input_files = {}
-            config.output_files = {}
-
-            # Render variables for the job
-            config.render_variables = {}
-
-            # Custom HTCondor directives
-            config.custom_content = []
+            # Custom HTCondor directives (required for CERN)
             config.custom_content.append(("RequestCpus", str(self.htcondor_cpus)))
             config.custom_content.append(("RequestMemory", self.htcondor_memory))
             config.custom_content.append(("RequestDisk", self.htcondor_disk))
             config.custom_content.append(("+MaxRuntime", str(self.max_runtime)))
-            config.custom_content.append(("getenv", "True"))
-            config.custom_content.append(("universe", "vanilla"))
+            config.custom_content.append(("getenv", "true"))
+            config.custom_content.append(("log", "/dev/null"))  # Required by CERN HTCondor
 
             print(f"DEBUG: job config created successfully")
             return config
