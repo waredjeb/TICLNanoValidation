@@ -178,6 +178,11 @@ class ValidateMultipleFiles(TICLValidationTask, law.LocalWorkflow):
 # Only define HTCondor task if contrib is available
 if HTCONDOR_AVAILABLE:
     class ValidateMultipleFilesHTCondor(ValidateMultipleFiles, law.contrib.htcondor.HTCondorWorkflow):
+
+        def run(self):
+            """Override run to add debugging."""
+            print(f"DEBUG: ValidateMultipleFilesHTCondor.run() called for branch {self.branch}")
+            return super().run()
         """
         Run validation on multiple files using HTCondor.
 
