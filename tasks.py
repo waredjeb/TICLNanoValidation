@@ -14,7 +14,7 @@ from pathlib import Path
 
 # Load HTCondor contrib if available
 try:
-    law.contrib.load("htcondor")
+    from framework import HTCondorWorkflow
     HTCONDOR_AVAILABLE = True
 except Exception:
     HTCONDOR_AVAILABLE = False
@@ -177,84 +177,20 @@ class ValidateMultipleFiles(TICLValidationTask, law.LocalWorkflow):
 
 # Only define HTCondor task if contrib is available
 if HTCONDOR_AVAILABLE:
-    class ValidateMultipleFilesHTCondor(ValidateMultipleFiles, law.contrib.htcondor.HTCondorWorkflow):
-
-        def run(self):
-            """Override run to add debugging."""
-            print(f"DEBUG: ValidateMultipleFilesHTCondor.run() called for branch {self.branch}")
-            return super().run()
+    class ValidateMultipleFilesHTCondor(ValidateMultipleFiles, HTCondorWorkflow):
         """
         Run validation on multiple files using HTCondor.
 
         This task submits validation jobs to HTCondor for parallel processing
-        on a computing cluster.
+        on a computing cluster. Configuration is inherited from HTCondorWorkflow
+        base class in framework.py.
         """
-
-        htcondor_cpus = luigi.IntParameter(
-            default=1,
-            description="CPUs per HTCondor job"
-        )
-        htcondor_memory = luigi.Parameter(
-            default="2GB",
-            description="Memory per HTCondor job"
-        )
-        htcondor_disk = luigi.Parameter(
-            default="1GB",
-            description="Disk space per HTCondor job"
-        )
-        max_runtime = luigi.IntParameter(
-            default=3600,
-            description="Maximum runtime per job in seconds"
-        )
 
         def htcondor_output_directory(self):
             """Directory for HTCondor job outputs."""
             return law.LocalDirectoryTarget(
                 os.path.join(self.output_dir, "htcondor_jobs")
             )
-
-        def htcondor_bootstrap_file(self):
-            """Bootstrap file to set up environment on worker nodes."""
-            bootstrap_file = law.util.rel_path(__file__, "bootstrap.sh")
-            return law.JobInputFile(bootstrap_file, share=True, render_job=True)
-
-        def htcondor_job_config(self, config, job_num, branches):
-            """
-            Configure the HTCondor job.
-
-            This method is called for each job and should configure what
-            command to run and how to run it.
-            """
-            print(f"DEBUG: htcondor_job_config called for job {job_num}, branches {branches}")
-
-            # Render variables - available in bootstrap.sh
-            config.render_variables["validation_path"] = str(self.base_dir)
-
-            # Custom HTCondor directives (required for CERN)
-            config.custom_content.append(("RequestCpus", str(self.htcondor_cpus)))
-            config.custom_content.append(("RequestMemory", self.htcondor_memory))
-            config.custom_content.append(("RequestDisk", self.htcondor_disk))
-            config.custom_content.append(("+MaxRuntime", str(self.max_runtime)))
-            config.custom_content.append(("getenv", "true"))
-            config.custom_content.append(("log", "/dev/null"))  # Required by CERN HTCondor
-
-            print(f"DEBUG: job config created successfully")
-            return config
-
-        def htcondor_create_job_file_factory(self):
-            """Create HTCondor job file factory."""
-            factory = super().htcondor_create_job_file_factory()
-
-            # Set resources
-            factory.request_cpus = self.htcondor_cpus
-            factory.request_memory = self.htcondor_memory
-            factory.request_disk = self.htcondor_disk
-            factory.custom_content.append(("+MaxRuntime", str(self.max_runtime)))
-
-            # Set environment
-            factory.custom_content.append(("getenv", "True"))
-
-            return factory
 
 
 class MergeValidationResults(TICLValidationTask):
