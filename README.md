@@ -165,13 +165,135 @@ MODULE_REGISTRY = {
 }
 ```
 
-## Future Integration: LAW
+## LAW Integration (HTCondor Workflows)
 
-The framework is designed to integrate with LAW (Luigi Analysis Workflow) for distributed execution on HTCondor. The core analysis code is independent of the workflow layer, making it easy to:
+The framework integrates with LAW (Luigi Analysis Workflow) for distributed execution on HTCondor and managing large-scale validation campaigns.
 
-1. Run locally (current implementation)
-2. Wrap with LAW tasks for grid submission
-3. Scale to large datasets
+### Setup
+
+```bash
+# Source the setup script
+source setup.sh
+
+# Or manually
+export LAW_HOME="$(pwd)/.law"
+export LAW_CONFIG_FILE="$(pwd)/law.cfg"
+```
+
+### LAW Tasks
+
+#### ValidateSingleFile
+Run validation on a single file (useful for testing):
+
+```bash
+law run ValidateSingleFile \
+    --input step4_inNANOAODSIM.root \
+    --output results/ \
+    --suite full_validation
+```
+
+#### ValidateMultipleFiles
+Run validation on multiple files locally in parallel:
+
+```bash
+# Using glob pattern
+law run ValidateMultipleFiles \
+    --input 'data/*.root' \
+    --output batch_results/ \
+    --suite performance \
+    --workers 4
+
+# Limit number of files
+law run ValidateMultipleFiles \
+    --input 'data/*.root' \
+    --max-files 10 \
+    --output batch_results/
+```
+
+#### ValidateMultipleFilesHTCondor
+Submit validation jobs to HTCondor for cluster execution:
+
+```bash
+law run ValidateMultipleFilesHTCondor \
+    --input '/eos/cms/store/data/*.root' \
+    --output htcondor_results/ \
+    --suite full_validation \
+    --htcondor-cpus 2 \
+    --htcondor-memory 4GB \
+    --max-runtime 7200
+```
+
+#### MergeValidationResults
+Merge results from multiple validation runs:
+
+```bash
+law run MergeValidationResults \
+    --input 'data/*.root' \
+    --output batch_results/ \
+    --suite full_validation
+```
+
+### LAW Task Parameters
+
+Common parameters for all tasks:
+- `--input`: Input file pattern
+- `--output-dir`: Base output directory
+- `--modules`: List of modules (comma-separated)
+- `--suite`: Validation suite name
+- `--analyze-hlt`: Analyze HLT collections
+- `--matching-method`: Matching method (shared_energy, score)
+- `--threads`: Threads per job
+
+HTCondor-specific parameters:
+- `--htcondor-cpus`: CPUs per job
+- `--htcondor-memory`: Memory per job (e.g., 2GB, 4GB)
+- `--htcondor-disk`: Disk space per job
+- `--max-runtime`: Maximum runtime in seconds
+
+### Monitoring LAW Workflows
+
+```bash
+# Check task status
+law run ValidateMultipleFiles --input 'data/*.root' --print-status -1
+
+# List output files
+law run ValidateMultipleFiles --input 'data/*.root' --print-output -1
+
+# Remove outputs (for rerunning)
+law run ValidateMultipleFiles --input 'data/*.root' --remove-output -1
+
+# Check dependencies
+law run ValidateMultipleFiles --input 'data/*.root' --print-deps -1
+```
+
+### Configuration Files
+
+- `law.cfg`: LAW configuration (HTCondor settings, output paths)
+- `luigi.cfg`: Luigi backend configuration (workers, scheduling)
+- `setup.sh`: Environment setup script
+
+### Example Workflow
+
+```bash
+# 1. Setup environment
+source setup.sh
+
+# 2. Test on single file
+law run ValidateSingleFile --input test.root --output test_output/
+
+# 3. Run on batch locally
+law run ValidateMultipleFiles --input 'data/*.root' --output local_batch/
+
+# 4. Submit to HTCondor
+law run ValidateMultipleFilesHTCondor \
+    --input '/eos/cms/store/data/phase2/*.root' \
+    --output htcondor_batch/ \
+    --htcondor-cpus 4 \
+    --htcondor-memory 8GB
+
+# 5. Merge results
+law run MergeValidationResults --input 'data/*.root' --output htcondor_batch/
+```
 
 ## Requirements
 

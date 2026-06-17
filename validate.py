@@ -15,15 +15,15 @@ from pathlib import Path
 from typing import List, Dict, Any
 import ROOT
 
-from validation.config import ValidationConfig, CollectionConfig, OutputConfig
-from validation.core.data_loader import DataLoader
-from validation.modules import (
+from config import ValidationConfig, CollectionConfig, OutputConfig
+from core.data_loader import DataLoader
+from modules import (
     DistributionsModule,
     MatchingModule,
     EfficiencyModule,
     ResolutionModule,
 )
-from validation.presets.suites import get_suite, list_suites
+from presets.suites import get_suite, list_suites
 
 
 # Module registry

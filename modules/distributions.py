@@ -3,8 +3,8 @@
 import ROOT
 from pathlib import Path
 from typing import Dict, Any
-from validation.core.base_module import ValidationModule
-from validation.core.plotter import Plotter
+from core.base_module import ValidationModule
+from core.plotter import Plotter
 
 
 class DistributionsModule(ValidationModule):
