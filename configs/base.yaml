@@ -1,0 +1,33 @@
+# Schema-independent settings shared by HLT and offline runs.
+# Combine with a schema file, e.g.:
+#   ticlval run --config configs/base.yaml --config configs/offline.yaml --input step4.root
+
+run:
+  threads: 4
+  enable_mt: true
+  modules: [distributions, efficiency]
+  # reco_keys: []        # empty == all reco collections defined in the schema
+
+matching:
+  strategy: shared_energy        # or "score"
+  thresholds:
+    shared_energy: { sim2reco: 0.5, reco2sim: 0.5 }
+    score:         { sim2reco: 0.2, reco2sim: 0.6 }
+  sim_keys: []                   # empty == all sim collections in the schema
+
+binning:
+  eta:           { bins: 50,  min: -3.5,  max: 3.5 }
+  phi:           { bins: 50,  min: -3.15, max: 3.15 }
+  energy:        { bins: 100, min: 0.0,   max: 200.0 }
+  pt:            { bins: 100, min: 0.0,   max: 100.0 }
+  response:      { bins: 100, min: 0.0,   max: 3.0 }
+  resolution:    { bins: 100, min: -2.0,  max: 2.0 }
+  quality_sef:   { bins: 100, min: 0.0,   max: 1.0 }
+  quality_score: { bins: 100, min: 0.0,   max: 2.0 }
+
+output:
+  formats: [png, pdf]
+  dpi: 150
+  figure_width: 10
+  figure_height: 8
+  save_summary_json: true
