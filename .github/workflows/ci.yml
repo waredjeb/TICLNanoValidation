@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:   # allow manual runs from the Actions tab
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install ruff
+      # Bug-level checks only (syntax errors, undefined names) — not style nits,
+      # so this stays green while still catching real mistakes.
+      - name: ruff (bug-level)
+        run: ruff check --select E9,F63,F7,F82 ticlNanoVal workflow tests
+
+  test:
+    name: test (ROOT)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -l {0}   # login shell so the micromamba env is active
+    steps:
+      - uses: actions/checkout@v4
+
+      # ROOT/PyROOT is not pip-installable; get it (plus the scientific stack)
+      # from conda-forge. law/luigi are pip-only and added on top.
+      - name: Set up ROOT environment
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: ticlci
+          create-args: >-
+            python=3.11
+            root
+            numpy
+            matplotlib
+            mplhep
+            pyyaml
+            pytest
+          cache-environment: true
+
+      - name: Install law + framework
+        run: |
+          pip install law luigi
+          pip install -e . --no-deps   # make ticlNanoVal importable; deps already present
+
+      - name: Sanity — imports and LAW task indexing
+        env:
+          LAW_CONFIG_FILE: ${{ github.workspace }}/law.cfg
+          LAW_HOME: ${{ github.workspace }}/.law
+          PYTHONPATH: ${{ github.workspace }}
+          TICLNANOVAL_EOS_BASE: "root://example//dummy"  # only used at target creation
+        run: |
+          python -c "import ticlNanoVal, workflow.tasks; print('imports OK')"
+          law index --verbose
+
+      - name: Run tests
+        run: pytest -q
+        # The pipeline integration tests skip automatically when no sample ROOT
+        # files are present (they are not committed); the config/schema/registry
+        # tests run and exercise ROOT.
