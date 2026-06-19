@@ -184,6 +184,24 @@ it as a single command instead, pass those flags prefixed, e.g.
   `gfal2 is not installed`. Use `--store local` with an `/eos` path instead, unless you
   have a gfal2-enabled environment.
 
+#### Merge + plot only (re-plot from existing histograms)
+
+If the per-file `hists_*.root` already exist, you can run **only** the merge + final
+plots — no jobs, no `--input-files`, no workflow — by pointing `--hists` at them:
+
+```bash
+law run PlotValidation \
+    --configs configs/base.yaml,configs/offline.yaml \
+    --hists '/eos/user/w/wredjeb/TestLAW/Tests/ticlruns/test1/hists_*.root' \
+    --output-dir /eos/user/w/wredjeb/TestLAW/Tests/ticlruns/test1
+```
+
+This is the quickest way to re-derive `merged.root`, the combined plots and
+`summary.json` after a tweak to plot styling/metrics. (Note: changing *binning*
+requires re-running the per-file jobs, since histograms are booked there.)
+Alternatively, with no `--hists`, `PlotValidation` reuses an already-complete
+`ValidateFilesHTCondor`/`Local` (matching params) and does only merge + plot.
+
 Output store (`--store`):
 
 * `--store local` — write results under `--output-dir` on a mounted FS (e.g. your AFS

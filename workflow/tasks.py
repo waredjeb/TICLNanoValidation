@@ -52,7 +52,10 @@ class BaseParams(law.Task):
         description="comma-separated YAML config files (layered in order), "
         "e.g. configs/base.yaml,configs/offline.yaml",
     )
-    input_files = luigi.Parameter(description="input file path or glob")
+    input_files = luigi.Parameter(
+        default="", description="input file path or glob (not needed for merge/plot "
+        "from an explicit --hists glob)"
+    )
     output_dir = luigi.Parameter(
         default="validation_output", description="base output directory"
     )
@@ -187,11 +190,19 @@ class MergeHistograms(BaseParams):
     )
     max_files = luigi.IntParameter(default=-1)
     store = luigi.Parameter(default="wlcg", description="store used by the workflow: local|wlcg")
+    hists = luigi.Parameter(
+        default="",
+        description="glob of existing per-file histogram files to merge directly "
+        "(e.g. '.../hists_*.root'); when set, the upstream workflow is NOT required",
+    )
 
     def _workflow_cls(self):
         return ValidateFilesHTCondor if str(self.workflow) == "htcondor" else ValidateFilesLocal
 
     def requires(self):
+        # Standalone merge: depend on nothing, just merge the given files.
+        if str(self.hists):
+            return []
         return self._workflow_cls()(
             configs=self.configs,
             input_files=self.input_files,
@@ -206,15 +217,31 @@ class MergeHistograms(BaseParams):
     def output(self):
         return law.LocalFileTarget(os.path.join(self.output_dir, "merged.root"))
 
+    def _input_paths(self):
+        """Local paths of the per-file histogram files to merge."""
+        merged = self.output().path
+        if str(self.hists):
+            return [
+                p for p in sorted(glob.glob(str(self.hists)))
+                if p.endswith(".root") and os.path.abspath(p) != os.path.abspath(merged)
+            ]
+        return [t.path for t in _collect_file_targets(self.input()) if t.path.endswith(".root")]
+
     def run(self):
         import ROOT
 
-        targets = [t for t in _collect_file_targets(self.input()) if t.path.endswith(".root")]
-        if not targets:
-            raise RuntimeError("no per-file histogram outputs found to merge")
+        paths = self._input_paths()
+        if not paths:
+            raise RuntimeError("no per-file histogram files found to merge")
 
         with tempfile.TemporaryDirectory() as scratch:
-            # Pull each branch output to local scratch (handles EOS via XRootD).
+            # In workflow mode the inputs are law targets (may be remote); in --hists
+            # mode they are plain paths. Build targets so both go through copy_to_local.
+            if str(self.hists):
+                targets = [law.LocalFileTarget(p) for p in paths]
+            else:
+                targets = [t for t in _collect_file_targets(self.input()) if t.path.endswith(".root")]
+
             local_files = []
             for i, target in enumerate(targets):
                 dst = os.path.join(scratch, f"h{i}.root")
@@ -244,6 +271,11 @@ class PlotValidation(BaseParams):
     workflow = luigi.ChoiceParameter(default="htcondor", choices=("local", "htcondor"))
     max_files = luigi.IntParameter(default=-1)
     store = luigi.Parameter(default="wlcg", description="store used by the workflow: local|wlcg")
+    hists = luigi.Parameter(
+        default="",
+        description="glob of existing per-file histogram files (passed to MergeHistograms); "
+        "when set, merge + plot run standalone without the upstream workflow",
+    )
 
     def requires(self):
         return MergeHistograms(
@@ -256,6 +288,7 @@ class PlotValidation(BaseParams):
             workflow=self.workflow,
             max_files=self.max_files,
             store=self.store,
+            hists=self.hists,
         )
 
     def output(self):
