@@ -156,14 +156,14 @@ the tail task to merge + plot **locally** on the submit node.
 law run ValidateFilesHTCondor \
     --configs configs/base.yaml,configs/offline.yaml \
     --input-files '/eos/.../*.root' \
-    --output-dir my_run --store wlcg \
+    --output-dir /eos/user/x/xxx/my_run --store local \
     --max-runtime 3600 --htcondor-cpus 2 --htcondor-memory 4GB
 
 # 2) merge + final plots locally
 law run PlotValidation \
     --configs configs/base.yaml,configs/offline.yaml \
     --input-files '/eos/.../*.root' \
-    --output-dir my_run --store wlcg --workflow htcondor
+    --output-dir /eos/user/x/xxx/my_run --store local --workflow htcondor
 ```
 
 `PlotValidation` is a plain task, so HTCondor flags (`--max-runtime`, `--htcondor-*`,
@@ -172,6 +172,17 @@ Step 2 won't resubmit as long as `configs`, `input-files`, `output-dir`, `max-fi
 and `store` match step 1 (the HTCondor resource flags are `significant=False`). To run
 it as a single command instead, pass those flags prefixed, e.g.
 `--ValidateFilesHTCondor-max-runtime 3600`.
+
+#### Output store on lxplus
+
+* `--store local` writes via POSIX paths. Point `--output-dir` at your **EOS fuse mount**
+  (`/eos/user/<i>/<user>/...`) or AFS work area — both are mounted on lxplus and on CERN
+  HTCondor workers (with the forwarded Kerberos token). This is the recommended default.
+* `--store wlcg` stages via **gfal2** (XRootD under the hood) to `TICLNANOVAL_EOS_BASE`.
+  It only works if `gfal2` python bindings are importable — **the standard LCG views with
+  python 3.13 do not ship them**, so `--store wlcg` fails with
+  `gfal2 is not installed`. Use `--store local` with an `/eos` path instead, unless you
+  have a gfal2-enabled environment.
 
 Output store (`--store`):
 
