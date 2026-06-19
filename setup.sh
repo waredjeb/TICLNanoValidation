@@ -3,10 +3,18 @@
 #
 #   source setup.sh
 #
-# On lxplus, source an LCG view first (for ROOT) if you don't already have one,
-# e.g.:  source /cvmfs/sft.cern.ch/lcg/views/LCG_105/x86_64-el9-gcc13-opt/setup.sh
+# On lxplus, in a clean shell (no cmsenv), source one LCG view first (for ROOT),
+# e.g.:  source /cvmfs/sft.cern.ch/lcg/views/LCG_109/x86_64-el9-gcc13-opt/setup.sh
+# law + luigi must be importable by that python (pip install --user law luigi, or
+# a venv). HTCondor workers do not use this install — see workflow/framework.py.
+#
+# If a repo-local venv exists, activate it (optional convenience for interactive use).
 
 export TICLNANOVAL_BASE="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+if [ -f "${TICLNANOVAL_BASE}/.venv/bin/activate" ]; then
+    source "${TICLNANOVAL_BASE}/.venv/bin/activate"
+fi
 
 export PYTHONPATH="${TICLNANOVAL_BASE}:${PYTHONPATH}"
 export LAW_HOME="${TICLNANOVAL_BASE}/.law"

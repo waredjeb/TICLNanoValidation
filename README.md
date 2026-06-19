@@ -33,7 +33,8 @@ ticlNanoVal/              # the framework (pure analysis, no LAW)
 workflow/                 # LAW layer (thin: orchestration only, imports ROOT lazily)
   framework.py            #   CERN/lxplus HTCondor base + bootstrap wiring
   tasks.py                #   ValidateFile, ValidateFilesLocal, ValidateFilesHTCondor, MergeSummaries
-  bootstrap.sh            #   sourced on the HTCondor worker (LCG view + PYTHONPATH)
+  bootstrap.sh            #   sourced on the HTCondor worker (LCG view + unpack bundle)
+  make_software_bundle.sh #   one-time: build the law+luigi tarball shipped to workers
 configs/                  # base.yaml (settings) + hlt.yaml / offline.yaml (schemas)
 tests/                    # smoke tests (config/schema always; pipeline if sample files present)
 ```
@@ -46,22 +47,32 @@ flow lives in `pipeline.py`.
 
 ## Setup
 
-ROOT (with PyROOT) must come from your environment — an LCG view or CMSSW. On lxplus:
+ROOT (with PyROOT) must come from your environment — an LCG view or CMSSW. On lxplus,
+source **one** LCG view in a clean shell (do *not* mix with a `cmsenv`/CMSSW
+environment — the python runtimes are incompatible):
 
 ```bash
-source /cvmfs/sft.cern.ch/lcg/views/LCG_105/x86_64-el9-gcc13-opt/setup.sh
+source /cvmfs/sft.cern.ch/lcg/views/LCG_109/x86_64-el9-gcc13-opt/setup.sh
 ```
 
-Then, from the repo root:
+`law`/`luigi` are needed only for the workflow layer; install them for the LCG python
+(a `pip install --user law luigi`, or a venv, is fine). Then, for every session, from
+the repo root:
 
 ```bash
 source setup.sh
 ```
 
 `setup.sh` puts the framework on `PYTHONPATH`, points LAW at `law.cfg` / `luigi.cfg`,
-and sets `TICLNANOVAL_EOS_BASE` (the EOS area used for HTCondor output — override it
-before sourcing to change the destination). `law`/`luigi` are needed only for the
-workflow layer (`pip install law luigi`).
+activates a repo-local `.venv` if you made one, and sets `TICLNANOVAL_EOS_BASE` (the
+EOS area used for `wlcg` output — override it before sourcing to change the destination).
+
+> **HTCondor users:** the workers do **not** use your interactive law install — they
+> get code + law/luigi shipped with the job (see the HTCondor section below). Build the
+> small software bundle once:
+> ```bash
+> bash workflow/make_software_bundle.sh   # with an LCG view sourced
+> ```
 
 ---
 
@@ -114,18 +125,45 @@ law run MergeSummaries \
 
 ### LAW — HTCondor (lxplus)
 
-One job per input file; results are staged to EOS via XRootD (`wlcg_fs_ticl` in `law.cfg`).
+One job per input file. **Code delivery is AFS-friendly:** by default (`--code-mode
+bundle`) the framework code is tarred from your git checkout at submit time and
+law/luigi are shipped as a second tarball; HTCondor transfers both with the job, the
+bootstrap unpacks them onto the worker's **local scratch**, and the job runs from
+there. At runtime the worker reads only **CVMFS** (ROOT/python via the LCG view) and
+local disk — **AFS is read once, at submit, to build the bundle**, never per-job.
+
+Build the law/luigi bundle once (re-run only to update law):
+
+```bash
+bash workflow/make_software_bundle.sh      # with an LCG view sourced
+```
+
+Then submit (start with one file to smoke-test):
 
 ```bash
 law run ValidateFilesHTCondor \
     --configs configs/base.yaml,configs/offline.yaml \
     --input-files '/eos/.../*.root' \
-    --output-dir my_run \
+    --output-dir my_run --max-files 1 \
     --max-runtime 3600 --htcondor-cpus 2 --htcondor-memory 4GB
 ```
 
-Each worker sources the LCG view from CVMFS (`bootstrap.sh`) and puts the repo on
-`PYTHONPATH`. Use `--store local` to keep outputs on the submit node instead of EOS.
+Output store (`--store`):
+
+* `--store local` — write results under `--output-dir` on a mounted FS (e.g. your AFS
+  work area). One small write per job.
+* `--store wlcg` (default for HTCondor) — stage results to EOS via XRootD
+  (`wlcg_fs_ticl` in `law.cfg`, rooted at `TICLNANOVAL_EOS_BASE`).
+
+Either way the worker authenticates with the Kerberos credential CERN HTCondor
+forwards to the job. That credential is valid for ~25 h, so for very long jobs run
+`voms-proxy-init --voms cms` first (a grid proxy lasts ~192 h).
+
+**Escape hatch — `--code-mode afs`:** skip bundling and import the code directly from
+the AFS checkout, using the law already on your `PATH`. Zero packaging, but every job
+reads the repo from AFS — fine for a handful of jobs, discouraged at scale. The repo
+must then live on a path the workers can read (AFS), and the `--lcg-view` must match
+the python your interactive law was installed for.
 
 ---
 
