@@ -148,16 +148,30 @@ law run ValidateFilesHTCondor \
     --max-runtime 3600 --htcondor-cpus 2 --htcondor-memory 4GB
 ```
 
-For the full run, drive the tail task — the per-file jobs go to HTCondor, then the
-merge and final plots run **locally** on the submit node:
+For the full run, do it in two steps: submit the per-file jobs to HTCondor, then run
+the tail task to merge + plot **locally** on the submit node.
 
 ```bash
+# 1) per-file event loop on HTCondor (accepts the --max-runtime/--htcondor-* flags)
+law run ValidateFilesHTCondor \
+    --configs configs/base.yaml,configs/offline.yaml \
+    --input-files '/eos/.../*.root' \
+    --output-dir my_run --store wlcg \
+    --max-runtime 3600 --htcondor-cpus 2 --htcondor-memory 4GB
+
+# 2) merge + final plots locally
 law run PlotValidation \
     --configs configs/base.yaml,configs/offline.yaml \
     --input-files '/eos/.../*.root' \
-    --output-dir my_run --workflow htcondor \
-    --max-runtime 3600 --htcondor-cpus 2 --htcondor-memory 4GB
+    --output-dir my_run --store wlcg --workflow htcondor
 ```
+
+`PlotValidation` is a plain task, so HTCondor flags (`--max-runtime`, `--htcondor-*`,
+`--poll-interval`) are **not** accepted on it — they belong to `ValidateFilesHTCondor`.
+Step 2 won't resubmit as long as `configs`, `input-files`, `output-dir`, `max-files`
+and `store` match step 1 (the HTCondor resource flags are `significant=False`). To run
+it as a single command instead, pass those flags prefixed, e.g.
+`--ValidateFilesHTCondor-max-runtime 3600`.
 
 Output store (`--store`):
 
