@@ -1,40 +1,27 @@
-#!/bin/bash
-# Setup script for TICL NanoAOD Validation with LAW
+#!/usr/bin/env bash
+# Environment setup for the ticlNanoVal framework + LAW.
+#
+#   source setup.sh
+#
+# On lxplus, source an LCG view first (for ROOT) if you don't already have one,
+# e.g.:  source /cvmfs/sft.cern.ch/lcg/views/LCG_105/x86_64-el9-gcc13-opt/setup.sh
 
-# Get the directory of this script
-export TICL_VALIDATION_BASE="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+export TICLNANOVAL_BASE="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-# Set LAW environment variables
-export LAW_HOME="${TICL_VALIDATION_BASE}/.law"
-export LAW_CONFIG_FILE="${TICL_VALIDATION_BASE}/law.cfg"
-export LAW_JOB_FILE_DIR="${TICL_VALIDATION_BASE}/.law/jobs"
-export LAW_TARGET_CACHE="${TICL_VALIDATION_BASE}/.law/cache"
+export PYTHONPATH="${TICLNANOVAL_BASE}:${PYTHONPATH}"
+export LAW_HOME="${TICLNANOVAL_BASE}/.law"
+export LAW_CONFIG_FILE="${TICLNANOVAL_BASE}/law.cfg"
+export LUIGI_CONFIG_PATH="${TICLNANOVAL_BASE}/luigi.cfg"
 
-# Create necessary directories
-mkdir -p "${LAW_HOME}"
-mkdir -p "${LAW_JOB_FILE_DIR}"
-mkdir -p "${LAW_TARGET_CACHE}"
+# EOS base for the wlcg_fs_ticl target (law.cfg can't do bash substring expansion).
+# Defaults to your personal EOS area; override before sourcing to change it.
+export TICLNANOVAL_EOS_BASE="${TICLNANOVAL_EOS_BASE:-root://eosuser.cern.ch//eos/user/${USER:0:1}/${USER}/TICLNanoValidation}"
 
-# Add the validation directory to PYTHONPATH
-export PYTHONPATH="${TICL_VALIDATION_BASE}:${PYTHONPATH}"
+mkdir -p "${LAW_HOME}/jobs"
 
-# Setup Luigi (LAW's backend)
-export LUIGI_CONFIG_PATH="${TICL_VALIDATION_BASE}/luigi.cfg"
+# Enable shell tab-completion for `law` if available.
+command -v law >/dev/null 2>&1 && source "$( law completion )" 2>/dev/null
 
-echo "TICL NanoAOD Validation environment setup complete!"
-echo "Base directory: ${TICL_VALIDATION_BASE}"
-echo "LAW home: ${LAW_HOME}"
-echo ""
-echo "Usage examples:"
-echo "  # Run validation on single file"
-echo "  law run ValidateSingleFile --input step4.root --output results/"
-echo ""
-echo "  # Run validation on multiple files locally"
-echo "  law run ValidateMultipleFiles --input 'data/*.root' --output results/"
-echo ""
-echo "  # Submit to HTCondor"
-echo "  law run ValidateMultipleFilesHTCondor --input 'data/*.root' --output results/"
-echo ""
-echo "  # Check task status"
-echo "  law run ValidateMultipleFiles --input 'data/*.root' --print-status -1"
-echo ""
+echo "ticlNanoVal ready (base: ${TICLNANOVAL_BASE})"
+echo "  CLI : python3 -m ticlNanoVal.cli run -c configs/base.yaml -c configs/offline.yaml -i FILE -o OUT"
+echo "  LAW : law run ValidateFile --configs configs/base.yaml,configs/offline.yaml --input-files FILE --output-dir OUT"

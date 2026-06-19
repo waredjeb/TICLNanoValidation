@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ticlNanoVal"
+version = "0.1.0"
+description = "Flexible RDataFrame + LAW framework for validating TICL NanoAOD (HLT and offline)"
+requires-python = ">=3.8"
+dependencies = [
+    "PyYAML>=5.4",
+    "numpy",
+    "matplotlib",
+    "mplhep",
+    # ROOT is provided by the environment (LCG view / CMSSW), not pip.
+    # law/luigi are only needed for the workflow layer.
+]
+
+[project.optional-dependencies]
+workflow = ["law>=0.1.0", "luigi"]
+
+[project.scripts]
+ticlval = "ticlNanoVal.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["ticlNanoVal*"]

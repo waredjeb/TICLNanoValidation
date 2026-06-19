@@ -11,6 +11,8 @@ build/
 # LAW
 .law/
 *.law
+# Cloned LAW source kept locally for reference only (has its own .git)
+law/
 
 # Luigi
 luigi-state.pickle
