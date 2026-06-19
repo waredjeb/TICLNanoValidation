@@ -32,7 +32,7 @@ ticlNanoVal/              # the framework (pure analysis, no LAW)
   cli.py                  #   `ticlval run ...` / `ticlval list`
 workflow/                 # LAW layer (thin: orchestration only, imports ROOT lazily)
   framework.py            #   CERN/lxplus HTCondor base + bootstrap wiring
-  tasks.py                #   ValidateFile, ValidateFilesLocal, ValidateFilesHTCondor, MergeSummaries
+  tasks.py                #   ValidateFile(s){Local,HTCondor}, MergeHistograms, PlotValidation
   bootstrap.sh            #   sourced on the HTCondor worker (LCG view + unpack bundle)
   make_software_bundle.sh #   one-time: build the law+luigi tarball shipped to workers
 configs/                  # base.yaml (settings) + hlt.yaml / offline.yaml (schemas)
@@ -111,17 +111,17 @@ law run ValidateFile \
     --input-files ../step4_inNANOAODSIM.root \
     --output-dir validation_output --threads 4
 
-# many files, one local branch per file (parallel via --workers)
-law run ValidateFilesLocal \
+# many files: one branch per file -> per-file histograms, then merge + final plots.
+# Running the tail task pulls the whole chain (Validate -> Merge -> Plot):
+law run PlotValidation \
     --configs configs/base.yaml,configs/offline.yaml \
     --input-files '/path/to/*.root' \
-    --output-dir validation_output --workers 4
-
-# merge per-file summaries into one
-law run MergeSummaries \
-    --configs configs/base.yaml,configs/offline.yaml \
-    --input-files '/path/to/*.root' --output-dir validation_output
+    --output-dir validation_output \
+    --workflow local --store local --workers 4
 ```
+
+The per-file event loop is parallelized (here locally via `--workers`); the histogram
+**merge and final plotting run locally** and cheaply. See *Multi-file workflow* below.
 
 ### LAW — HTCondor (lxplus)
 
@@ -138,13 +138,24 @@ Build the law/luigi bundle once (re-run only to update law):
 bash workflow/make_software_bundle.sh      # with an LCG view sourced
 ```
 
-Then submit (start with one file to smoke-test):
+Then submit. Smoke-test the batch step alone with one file first:
 
 ```bash
 law run ValidateFilesHTCondor \
     --configs configs/base.yaml,configs/offline.yaml \
     --input-files '/eos/.../*.root' \
     --output-dir my_run --max-files 1 \
+    --max-runtime 3600 --htcondor-cpus 2 --htcondor-memory 4GB
+```
+
+For the full run, drive the tail task — the per-file jobs go to HTCondor, then the
+merge and final plots run **locally** on the submit node:
+
+```bash
+law run PlotValidation \
+    --configs configs/base.yaml,configs/offline.yaml \
+    --input-files '/eos/.../*.root' \
+    --output-dir my_run --workflow htcondor \
     --max-runtime 3600 --htcondor-cpus 2 --htcondor-memory 4GB
 ```
 
@@ -247,7 +258,7 @@ Built-in strategies: `shared_energy` (maximise shared energy fraction) and `scor
 
 ## Outputs
 
-Per run, under the output directory:
+Single file (`ValidateFile`) or the final `PlotValidation`, under the output directory:
 
 ```
 summary.json                       # scalar metrics per reco collection
@@ -255,8 +266,23 @@ summary.json                       # scalar metrics per reco collection
 ```
 
 `summary.json` is the machine-readable contract (e.g.
-`ticlTrackstersCLUE3DHigh_cp_efficiency`); `MergeSummaries` aggregates these across
-files into `merged_summary.json` (mean/min/max/n_files per metric).
+`ticlTrackstersCLUE3DHigh_cp_efficiency`).
+
+### Multi-file workflow
+
+```
+ValidateFiles{Local,HTCondor}   one branch/file -> hists_<i>.root   (histograms only)
+        │                                                            [parallel]
+MergeHistograms                 TFileMerger sums all -> merged.root  [local]
+        │
+PlotValidation                  merged.root -> plots + summary.json  [local]
+```
+
+Each per-file job writes **only histograms** (`hists_<i>.root`); `MergeHistograms`
+sums them (numerator and denominator separately) with ROOT's `TFileMerger`, and
+`PlotValidation` derives the final efficiencies/plots from the **merged** histograms.
+This is the statistically correct combination — averaging per-file efficiencies would
+not be. Pick the producing workflow with `--workflow local|htcondor`.
 
 ---
 
