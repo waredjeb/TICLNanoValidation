@@ -105,28 +105,27 @@ class EfficiencyModule(AnalysisModule):
         return m
 
     def plot(self, results, metrics, output_dir: Path, ctx: RunContext, reco_key: str):
+        # Driven by the histogram dict (not ctx.match_map) so this works equally when
+        # re-plotting from a merged ROOT file, where no matching context exists.
         reco = self.schema.reco_name(reco_key)
         out = Path(output_dir) / reco
-        for sim_key in ctx.sims_for(reco_key, "sim2reco"):
-            for field, _, xlabel in _OBS:
-                tag = f"eff_{sim_key}_{field}"
-                if f"{tag}__pass" in results and f"{tag}__total" in results:
-                    self.plotter.efficiency(
-                        results[f"{tag}__pass"],
-                        results[f"{tag}__total"],
-                        out,
-                        f"efficiency_{sim_key}_vs_{field}",
-                        xlabel=xlabel,
-                        ylabel="Efficiency",
-                    )
-        for sim_key in ctx.sims_for(reco_key, "reco2sim"):
-            tag = f"fake_{sim_key}_eta"
-            if f"{tag}__pass" in results and f"{tag}__total" in results:
-                self.plotter.efficiency(
-                    results[f"{tag}__pass"],
-                    results[f"{tag}__total"],
-                    out,
-                    f"fake_rate_{sim_key}_vs_eta",
-                    xlabel=r"$\eta$",
-                    ylabel="Fake rate",
-                )
+        labels = {field: xlabel for field, _, xlabel in _OBS}
+        for key in results:
+            if not key.endswith("__total"):
+                continue
+            tag = key[: -len("__total")]
+            if f"{tag}__pass" not in results:
+                continue
+            kind, sim_key, obs = tag.split("_", 2)  # eff|fake, sim key, observable
+            if kind == "eff":
+                name, ylabel = f"efficiency_{sim_key}_vs_{obs}", "Efficiency"
+            else:
+                name, ylabel = f"fake_rate_{sim_key}_vs_{obs}", "Fake rate"
+            self.plotter.efficiency(
+                results[f"{tag}__pass"],
+                results[f"{tag}__total"],
+                out,
+                name,
+                xlabel=labels.get(obs, obs),
+                ylabel=ylabel,
+            )

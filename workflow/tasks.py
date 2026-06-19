@@ -1,26 +1,36 @@
 """LAW tasks for TICL NanoAOD validation.
 
-Tasks are deliberately thin: they expand inputs, build a RunConfig from YAML +
-overrides, call ``ticlNanoVal.pipeline.run``, and stage the resulting directory as
-a single ``.tgz`` target. ROOT is imported lazily (inside ``run``) so that
-scheduling/indexing the tasks does not require the analysis environment.
+Tasks are deliberately thin: they expand inputs, build overrides from parameters,
+and call into ``ticlNanoVal.pipeline``. ROOT is imported lazily (inside ``run``) so
+that scheduling/indexing the tasks does not require the analysis environment.
+
+Workflow
+--------
+The heavy per-file event loop runs in parallel (locally or on HTCondor); merging the
+resulting histograms and producing the final plots run **locally** and cheaply:
+
+    ValidateFiles{Local,HTCondor}   one branch per file -> hists_<i>.root   [parallel]
+            |                        (histograms only, no plots)
+    MergeHistograms                  TFileMerger sums all hists -> merged.root   [local]
+            |
+    PlotValidation                   merged.root -> final plots + summary.json   [local]
+
+Combining at the *histogram* level (summing numerator/denominator, then re-deriving
+efficiencies) is the only correct way to merge many files.
 
 Tasks
 -----
-* ``ValidateFile``         : one input file, run locally.
-* ``ValidateFilesLocal``   : many files, one local branch per file.
-* ``ValidateFilesHTCondor``: many files, one HTCondor job per file (lxplus).
-* ``MergeSummaries``       : merge per-file summary.json into one summary.
-
-The local and HTCondor multi-file tasks share ``ValidateFilesBase``; the only
-difference is the workflow mix-in and the default storage backend.
+* ``ValidateFile``         : one input file, run locally, full plots + summary.
+* ``ValidateFilesLocal``   : many files, one local branch per file (histograms).
+* ``ValidateFilesHTCondor``: many files, one HTCondor job per file (histograms).
+* ``MergeHistograms``      : sum per-file histograms into one ROOT file.
+* ``PlotValidation``       : final, correctly-combined plots + summary from the merge.
 """
 
 from __future__ import annotations
 
 import glob
 import os
-import tarfile
 import tempfile
 from pathlib import Path
 
@@ -68,22 +78,6 @@ class BaseParams(law.Task):
             ov["matching"] = {"strategy": str(self.strategy)}
         return ov
 
-    def run_pipeline(self, input_files, dest_dir):
-        """Run the analysis pipeline into ``dest_dir`` (imports ROOT lazily)."""
-        from ticlNanoVal.pipeline import run_from_yaml
-
-        return run_from_yaml(
-            config_paths=self.config_paths(),
-            input_files=input_files,
-            output_dir=dest_dir,
-            overrides=self.overrides(),
-        )
-
-
-def _tar_dir(src_dir: str, tar_path: str):
-    with tarfile.open(tar_path, "w:gz") as tar:
-        tar.add(src_dir, arcname=".")
-
 
 def _collect_file_targets(obj):
     """Flatten nested dicts / lists / law TargetCollections into file targets."""
@@ -103,25 +97,32 @@ def _collect_file_targets(obj):
 
 
 # --------------------------------------------------------------------------- #
-# Single file (local)
+# Single file (local): full run with plots + summary
 # --------------------------------------------------------------------------- #
 class ValidateFile(BaseParams):
-    """Run validation on a single input file (local)."""
+    """Run validation on a single input file (local): plots + summary in output_dir."""
 
     def output(self):
         return law.LocalFileTarget(os.path.join(self.output_dir, "summary.json"))
 
     def run(self):
+        from ticlNanoVal.pipeline import run_from_yaml
+
         out = self.output()
         out.parent.touch()
-        self.run_pipeline(self.input_files, os.path.dirname(out.path) or ".")
+        run_from_yaml(
+            config_paths=self.config_paths(),
+            input_files=self.input_files,
+            output_dir=os.path.dirname(out.path) or ".",
+            overrides=self.overrides(),
+        )
 
 
 # --------------------------------------------------------------------------- #
-# Many files (workflow): one branch per file
+# Many files (workflow): one branch per file -> per-file histogram ROOT file
 # --------------------------------------------------------------------------- #
 class ValidateFilesBase(BaseParams, law.BaseWorkflow):
-    """One branch per input file; each branch stages a results tarball."""
+    """One branch per input file; each branch stages a histogram ROOT file."""
 
     exclude_index = True  # abstract base, not directly runnable
 
@@ -138,28 +139,29 @@ class ValidateFilesBase(BaseParams, law.BaseWorkflow):
 
     def _branch_rel(self):
         stem = Path(self.branch_data).stem
-        return f"file_{self.branch}_{stem}.tgz"
+        return f"hists_{self.branch}_{stem}.root"
 
     def output(self):
         rel = self._branch_rel()
         if str(self.store) == "wlcg":
-            # base path comes from the default wlcg_fs in law.cfg
             return law.wlcg.WLCGFileTarget(os.path.join(self.output_dir, rel))
         return law.LocalFileTarget(os.path.join(self.output_dir, rel))
 
     def run(self):
-        # Run into a local scratch dir, tar it, then stage the tarball to the target.
+        from ticlNanoVal.pipeline import run_histograms_from_yaml
+
+        # Book histograms into a local scratch file, then stage it to the target.
         with tempfile.TemporaryDirectory() as scratch:
-            results_dir = os.path.join(scratch, "results")
-            os.makedirs(results_dir, exist_ok=True)
-            self.run_pipeline(self.branch_data, results_dir)
-
-            tar_path = os.path.join(scratch, "results.tgz")
-            _tar_dir(results_dir, tar_path)
-
+            hist_path = os.path.join(scratch, "hists.root")
+            run_histograms_from_yaml(
+                config_paths=self.config_paths(),
+                input_files=self.branch_data,
+                hist_path=hist_path,
+                overrides=self.overrides(),
+            )
             out = self.output()
             out.parent.touch()
-            out.copy_from_local(tar_path)
+            out.copy_from_local(hist_path)
 
 
 class ValidateFilesLocal(ValidateFilesBase, law.LocalWorkflow):
@@ -173,15 +175,24 @@ class ValidateFilesHTCondor(ValidateFilesBase, HTCondorWorkflow):
 
 
 # --------------------------------------------------------------------------- #
-# Merge
+# Merge (local): sum per-file histograms
 # --------------------------------------------------------------------------- #
-class MergeSummaries(BaseParams):
-    """Merge the per-file summaries produced by a local validation workflow."""
+class MergeHistograms(BaseParams):
+    """Sum the per-file histograms (numerator/denominator separately) into one file."""
 
+    workflow = luigi.ChoiceParameter(
+        default="htcondor",
+        choices=("local", "htcondor"),
+        description="which validation workflow produced the per-file histograms",
+    )
     max_files = luigi.IntParameter(default=-1)
+    store = luigi.Parameter(default="wlcg", description="store used by the workflow: local|wlcg")
+
+    def _workflow_cls(self):
+        return ValidateFilesHTCondor if str(self.workflow) == "htcondor" else ValidateFilesLocal
 
     def requires(self):
-        return ValidateFilesLocal(
+        return self._workflow_cls()(
             configs=self.configs,
             input_files=self.input_files,
             output_dir=self.output_dir,
@@ -189,44 +200,75 @@ class MergeSummaries(BaseParams):
             strategy=self.strategy,
             threads=self.threads,
             max_files=self.max_files,
+            store=self.store,
         )
 
     def output(self):
-        return law.LocalFileTarget(os.path.join(self.output_dir, "merged_summary.json"))
+        return law.LocalFileTarget(os.path.join(self.output_dir, "merged.root"))
 
     def run(self):
-        import json
+        import ROOT
 
-        agg = {}
-        n = 0
-        # self.input() is the workflow's (possibly nested) target collection.
-        targets = [t for t in _collect_file_targets(self.input()) if t.path.endswith(".tgz")]
-        for target in targets:
-            with tarfile.open(target.path, "r:gz") as tar:
-                member = tar.extractfile("./summary.json")
-                if member is None:
-                    continue
-                data = json.load(member)
-            n += 1
-            for collection, metrics in data.items():
-                bucket = agg.setdefault(collection, {})
-                for name, value in metrics.items():
-                    bucket.setdefault(name, []).append(value)
+        targets = [t for t in _collect_file_targets(self.input()) if t.path.endswith(".root")]
+        if not targets:
+            raise RuntimeError("no per-file histogram outputs found to merge")
 
-        merged = {
-            collection: {
-                name: {
-                    "mean": sum(vals) / len(vals),
-                    "min": min(vals),
-                    "max": max(vals),
-                    "n_files": len(vals),
-                }
-                for name, vals in metrics.items()
-            }
-            for collection, metrics in agg.items()
-        }
-        merged["_metadata"] = {"n_files": n, "input": str(self.input_files)}
+        with tempfile.TemporaryDirectory() as scratch:
+            # Pull each branch output to local scratch (handles EOS via XRootD).
+            local_files = []
+            for i, target in enumerate(targets):
+                dst = os.path.join(scratch, f"h{i}.root")
+                target.copy_to_local(dst)
+                local_files.append(dst)
+
+            merged = os.path.join(scratch, "merged.root")
+            merger = ROOT.TFileMerger(False)
+            if not merger.OutputFile(merged):
+                raise RuntimeError("could not open merge output file")
+            for lf in local_files:
+                merger.AddFile(lf)
+            if not merger.Merge():
+                raise RuntimeError("histogram merge failed")
+
+            out = self.output()
+            out.parent.touch()
+            out.copy_from_local(merged)
+
+
+# --------------------------------------------------------------------------- #
+# Plot (local): final combined plots + summary from the merged histograms
+# --------------------------------------------------------------------------- #
+class PlotValidation(BaseParams):
+    """Produce the final, correctly-combined plots + summary.json from the merge."""
+
+    workflow = luigi.ChoiceParameter(default="htcondor", choices=("local", "htcondor"))
+    max_files = luigi.IntParameter(default=-1)
+    store = luigi.Parameter(default="wlcg", description="store used by the workflow: local|wlcg")
+
+    def requires(self):
+        return MergeHistograms(
+            configs=self.configs,
+            input_files=self.input_files,
+            output_dir=self.output_dir,
+            modules=self.modules,
+            strategy=self.strategy,
+            threads=self.threads,
+            workflow=self.workflow,
+            max_files=self.max_files,
+            store=self.store,
+        )
+
+    def output(self):
+        return law.LocalFileTarget(os.path.join(self.output_dir, "summary.json"))
+
+    def run(self):
+        from ticlNanoVal.pipeline import plot_from_histograms_yaml
 
         out = self.output()
         out.parent.touch()
-        out.dump(merged, indent=2)
+        plot_from_histograms_yaml(
+            config_paths=self.config_paths(),
+            hist_path=self.input().path,
+            output_dir=os.path.dirname(out.path) or ".",
+            overrides=self.overrides(),
+        )
