@@ -53,6 +53,7 @@ class AnalysisModule(ABC):
 
     name: str = "base"
     requires: List[str] = []  # other module names whose columns this one needs
+    supports_sim: bool = False  # opt-in: also run book_sim/plot_sim over sim collections
 
     def __init__(self, config: RunConfig, schema: CollectionSchema):
         self.config = config
@@ -70,10 +71,23 @@ class AnalysisModule(ABC):
     ) -> Bookings:
         """Return lazy RResultPtr histograms for one reco collection."""
 
+    def book_sim(self, rdf: "ROOT.RDataFrame", ctx: RunContext, sim_key: str) -> Bookings:
+        """Return lazy RResultPtr histograms for one sim collection.
+
+        Only called when ``supports_sim`` is True. Default: none.
+        """
+        return {}
+
     def metrics(
         self, results: Dict[str, object], ctx: RunContext, reco_key: str
     ) -> Dict[str, float]:
         """Compute scalar metrics from realized histograms. Default: none."""
+        return {}
+
+    def metrics_sim(
+        self, results: Dict[str, object], ctx: RunContext, sim_key: str
+    ) -> Dict[str, float]:
+        """Compute scalar metrics for one sim collection. Default: none."""
         return {}
 
     @abstractmethod
@@ -86,3 +100,13 @@ class AnalysisModule(ABC):
         reco_key: str,
     ):
         """Render plots for one reco collection into ``output_dir``."""
+
+    def plot_sim(
+        self,
+        results: Dict[str, object],
+        metrics: Dict[str, float],
+        output_dir: Path,
+        ctx: RunContext,
+        sim_key: str,
+    ):
+        """Render plots for one sim collection into ``output_dir``. Default: no-op."""
