@@ -157,3 +157,10 @@ class CollectionSchema:
             if self.association(sim_key, reco_key, direction).exists(columns):
                 out.append(sim_key)
         return out
+
+    def available_sim_kinematics_keys(
+        self, columns: Set[str], wanted: Optional[Iterable[str]] = None
+    ) -> List[str]:
+        """Sim keys whose trackster collection is present, independent of matching."""
+        keys = list(wanted) if wanted else self.sim_keys()
+        return [k for k in keys if self.sim_size(k) in columns]

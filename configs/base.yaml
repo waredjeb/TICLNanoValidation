@@ -16,14 +16,14 @@ matching:
   sim_keys: []                   # empty == all sim collections in the schema
 
 binning:
-  eta:           { bins: 50,  min: -3.5,  max: 3.5 }
-  phi:           { bins: 50,  min: -3.15, max: 3.15 }
-  energy:        { bins: 100, min: 0.0,   max: 200.0 }
-  pt:            { bins: 100, min: 0.0,   max: 100.0 }
-  response:      { bins: 100, min: 0.0,   max: 3.0 }
-  resolution:    { bins: 100, min: -2.0,  max: 2.0 }
-  quality_sef:   { bins: 100, min: 0.0,   max: 1.0 }
-  quality_score: { bins: 100, min: 0.0,   max: 2.0 }
+  eta:           { bins: 20,  min: 1.5,  max: 3.5 }
+  phi:           { bins: 30,  min: -3.15, max: 3.15 }
+  energy:        { bins: 30, min: 0.0,   max: 600.0 }
+  pt:            { bins: 30, min: 0.0,   max: 100.0 }
+  response:      { bins: 30, min: 0.0,   max: 3.0 }
+  resolution:    { bins: 30, min: -2.0,  max: 2.0 }
+  quality_sef:   { bins: 30, min: 0.0,   max: 1.0 }
+  quality_score: { bins: 30, min: 0.0,   max: 2.0 }
 
 output:
   formats: [png, pdf]

@@ -37,6 +37,9 @@ log = logging.getLogger(__name__)
 # (module_name, reco_key) -> {hist_key: TH1-like}
 Realized = Dict[Tuple[str, str], Dict[str, object]]
 
+# Marks a Realized key's collection slot as a sim key rather than a reco key.
+SIM_KEY_PREFIX = "sim__"
+
 
 def _make_plotter(output_config):
     """Construct a Plotter, or return None if plotting deps are unavailable.
@@ -86,6 +89,8 @@ def _run_event_loop(
         modules[name] = mod
         rdf = mod.define(rdf, ctx)
 
+    sim_kine_keys = schema.available_sim_kinematics_keys(columns)
+
     bookings: Dict[Tuple[str, str], dict] = {}
     ptrs: List[ROOT.RDF.RResultPtr] = []
     for name, mod in modules.items():
@@ -97,6 +102,17 @@ def _run_event_loop(
                 continue
             if booked:
                 bookings[(name, reco_key)] = booked
+                ptrs.extend(booked.values())
+        if not mod.supports_sim:
+            continue
+        for sim_key in sim_kine_keys:
+            try:
+                booked = mod.book_sim(rdf, ctx, sim_key)
+            except Exception:
+                log.exception("book_sim failed: module=%s sim=%s", name, sim_key)
+                continue
+            if booked:
+                bookings[(name, SIM_KEY_PREFIX + sim_key)] = booked
                 ptrs.extend(booked.values())
 
     if ptrs:
@@ -119,21 +135,32 @@ def _finalize(
 ) -> Dict[str, Dict[str, float]]:
     """Compute metrics and (optionally) render plots from realized histograms."""
     summary: Dict[str, Dict[str, float]] = {}
-    for (mod_name, reco_key), results in realized.items():
+    for (mod_name, key), results in realized.items():
         mod = modules[mod_name]
         mod.plotter = plotter
+        is_sim = key.startswith(SIM_KEY_PREFIX)
+        coll_key = key[len(SIM_KEY_PREFIX):] if is_sim else key
         try:
-            metrics = mod.metrics(results, ctx, reco_key)
+            metrics = (
+                mod.metrics_sim(results, ctx, coll_key)
+                if is_sim
+                else mod.metrics(results, ctx, coll_key)
+            )
         except Exception:
-            log.exception("metrics failed: module=%s reco=%s", mod_name, reco_key)
+            log.exception("metrics failed: module=%s key=%s", mod_name, key)
             metrics = {}
-        reco = ctx.schema.reco_name(reco_key)
-        summary.setdefault(reco, {}).update(metrics)
+        collection = (
+            ctx.schema.sim(coll_key).tracksters if is_sim else ctx.schema.reco_name(coll_key)
+        )
+        summary.setdefault(collection, {}).update(metrics)
         if plotter is not None:
             try:
-                mod.plot(results, metrics, Path(output_dir) / mod_name, ctx, reco_key)
+                if is_sim:
+                    mod.plot_sim(results, metrics, Path(output_dir) / mod_name, ctx, coll_key)
+                else:
+                    mod.plot(results, metrics, Path(output_dir) / mod_name, ctx, coll_key)
             except Exception:
-                log.exception("plot failed: module=%s reco=%s", mod_name, reco_key)
+                log.exception("plot failed: module=%s key=%s", mod_name, key)
     return summary
 
 
@@ -149,12 +176,12 @@ def _write_summary(summary, config, output_dir: Path) -> None:
 # Histogram persistence (book -> ROOT file -> merge -> plot)
 # --------------------------------------------------------------------------- #
 def _write_hist_file(realized: Realized, hist_path: Union[str, Path]) -> None:
-    """Persist realized histograms as ``<module>/<reco_key>/<hist_key>`` in a TFile."""
+    """Persist realized histograms as ``<module>/<key>/<hist_key>`` in a TFile."""
     fh = ROOT.TFile(str(hist_path), "RECREATE")
     try:
-        for (mod_name, reco_key), results in realized.items():
+        for (mod_name, key), results in realized.items():
             mdir = fh.GetDirectory(mod_name) or fh.mkdir(mod_name)
-            sdir = mdir.GetDirectory(reco_key) or mdir.mkdir(reco_key)
+            sdir = mdir.GetDirectory(key) or mdir.mkdir(key)
             sdir.cd()
             for hist_key, obj in results.items():
                 obj.SetName(hist_key)
