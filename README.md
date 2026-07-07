@@ -67,6 +67,19 @@ source setup.sh
 activates a repo-local `.venv` if you made one, and sets `TICLNANOVAL_EOS_BASE` (the
 EOS area used for `wlcg` output — override it before sourcing to change the destination).
 
+**On el8** (RHEL/CentOS 8) the el9 LCG view above does not exist. Use `setupel8.sh`
+instead — from a clean shell it sources an el8 view (`LCG_107/x86_64-el8-gcc11-opt`,
+ROOT 6.34, python 3.11) for you and installs `law`/`luigi` to `--user` on first run
+if they are missing for that python (they are version-specific — an el9 py3.13 install
+is not visible here):
+
+```bash
+source setupel8.sh                 # sources the LCG view + does everything setup.sh does
+```
+
+Override the view with `TICLNANOVAL_LCG_VIEW=<view> source setupel8.sh`. For el8
+HTCondor workers, pass a matching `--lcg-view LCG_107/x86_64-el8-gcc11-opt`.
+
 > **HTCondor users:** the workers do **not** use your interactive law install — they
 > get code + law/luigi shipped with the job (see the HTCondor section below). Build the
 > small software bundle once:
